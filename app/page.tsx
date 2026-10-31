@@ -1,7 +1,15 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 export type Comment = {
   id: string;
@@ -112,6 +120,215 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
+/**
+ * 3D Interactive Orbit Canvas Component
+ * Renders real-time rotating 3D orbital rings with planetary nodes and cosmic dust
+ */
+function OrbitHeroCanvas({ dark }: { dark: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mouseRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let angle = 0;
+
+    // Handle high DPI displays
+    const updateSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    };
+    updateSize();
+
+    // Mouse tracking for 3D tilt
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const nx = (e.clientX - rect.left) / rect.width - 0.5;
+      const ny = (e.clientY - rect.top) / rect.height - 0.5;
+      mouseRef.current.targetX = nx;
+      mouseRef.current.targetY = ny;
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+
+    // Particle nodes on orbits
+    const particles = Array.from({ length: 24 }).map((_, i) => ({
+      orbitRadius: 40 + (i % 3) * 36,
+      speed: 0.008 + (i % 5) * 0.003,
+      angleOffset: (i * Math.PI * 2) / 24,
+      size: 1.5 + (i % 3) * 1.2,
+      opacity: 0.4 + (i % 4) * 0.15,
+    }));
+
+    const render = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width === 0 || height === 0) return;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Smooth mouse interpolation
+      mouseRef.current.x += (mouseRef.current.targetX - mouseRef.current.x) * 0.05;
+      mouseRef.current.y += (mouseRef.current.targetY - mouseRef.current.y) * 0.05;
+
+      const centerX = width * 0.65;
+      const centerY = height * 0.5;
+
+      // 3D Perspective Rotation Angles
+      const tiltX = 0.85 + mouseRef.current.y * 0.3;
+      const tiltZ = mouseRef.current.x * 0.4;
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(tiltZ);
+
+      // Draw Central Glowing Core
+      const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 35);
+      if (dark) {
+        coreGrad.addColorStop(0, "rgba(167, 139, 250, 0.95)");
+        coreGrad.addColorStop(0.4, "rgba(109, 40, 217, 0.6)");
+        coreGrad.addColorStop(1, "rgba(109, 40, 217, 0)");
+      } else {
+        coreGrad.addColorStop(0, "rgba(124, 58, 237, 0.85)");
+        coreGrad.addColorStop(0.4, "rgba(196, 181, 253, 0.5)");
+        coreGrad.addColorStop(1, "rgba(196, 181, 253, 0)");
+      }
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 35, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw 3 Concentric 3D Orbits
+      const orbits = [42, 78, 115];
+      orbits.forEach((radius, idx) => {
+        ctx.save();
+        ctx.scale(1, tiltX);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = dark
+          ? idx === 1
+            ? "rgba(167, 139, 250, 0.35)"
+            : "rgba(56, 189, 248, 0.25)"
+          : idx === 1
+          ? "rgba(109, 40, 217, 0.25)"
+          : "rgba(14, 165, 233, 0.2)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash(idx === 2 ? [3, 4] : []);
+        ctx.stroke();
+
+        ctx.restore();
+      });
+
+      // Draw Orbiting Celestial Spheres & Particles
+      angle += 0.012;
+
+      particles.forEach((p) => {
+        const curAngle = angle * p.speed * 60 + p.angleOffset;
+        const x = Math.cos(curAngle) * p.orbitRadius;
+        const y = Math.sin(curAngle) * p.orbitRadius * tiltX;
+
+        // Depth perspective scale
+        const depth = (Math.sin(curAngle) + 1) / 2; // 0 to 1
+        const scale = 0.75 + depth * 0.5;
+
+        ctx.beginPath();
+        ctx.arc(x, y, p.size * scale, 0, Math.PI * 2);
+
+        if (dark) {
+          ctx.fillStyle = `rgba(224, 231, 255, ${p.opacity * scale})`;
+          ctx.shadowColor = "#818cf8";
+          ctx.shadowBlur = 8 * scale;
+        } else {
+          ctx.fillStyle = `rgba(91, 33, 182, ${p.opacity * scale})`;
+          ctx.shadowColor = "#c4b5fd";
+          ctx.shadowBlur = 4 * scale;
+        }
+
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      ctx.restore();
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    window.addEventListener("resize", updateSize);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener("resize", updateSize);
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, [dark]);
+
+  return <canvas ref={canvasRef} className="hero-3d-canvas" />;
+}
+
+/**
+ * 3D Tilt Wrapper Component
+ * Provides smooth 3D perspective rotation and dynamic specular glare on mouse move
+ */
+function TiltCard({
+  children,
+  className = "",
+  maxTilt = 7,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  maxTilt?: number;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    const rotateX = ((y - centerY) / centerY) * -maxTilt;
+    const rotateY = ((x - centerX) / centerX) * maxTilt;
+
+    card.style.transform = `perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-2px)`;
+    card.style.setProperty("--glare-x", `${(x / rect.width) * 100}%`);
+    card.style.setProperty("--glare-y", `${(y / rect.height) * 100}%`);
+    card.style.setProperty("--glare-opacity", "1");
+  };
+
+  const handleMouseLeave = () => {
+    const card = cardRef.current;
+    if (!card) return;
+    card.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)";
+    card.style.setProperty("--glare-opacity", "0");
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className={`post-card-tilt ${className}`}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="card-glare" />
+      {children}
+    </div>
+  );
+}
+
 export default function Home() {
   const [posts, setPosts] = useState<Post[]>(seedPosts);
   const [votes, setVotes] = useState<Record<string, number>>({});
@@ -128,6 +345,12 @@ export default function Home() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notice, setNotice] = useState("");
+
+  // Upvote burst animation tracker { [postId]: boolean }
+  const [bursts, setBursts] = useState<Record<string, boolean>>({});
+
+  // Spotlight mouse position
+  const [mousePos, setMousePos] = useState({ x: -500, y: -500 });
 
   // Post form state
   const [title, setTitle] = useState("");
@@ -172,6 +395,15 @@ export default function Home() {
       // Storage quota or error handling
     }
   }, [posts, votes, saved, joined, dark, mounted]);
+
+  // Ambient mouse spotlight tracking
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", handleMove, { passive: true });
+    return () => window.removeEventListener("mousemove", handleMove);
+  }, []);
 
   // Keyboard shortcut listener (Cmd+K / Ctrl+K and Escape)
   useEffect(() => {
@@ -236,11 +468,20 @@ export default function Home() {
   // Current post selected for comments
   const activeCommentPost = posts.find((p) => p.id === commentPostId) || null;
 
-  // Voting handler
+  // Voting handler with 3D burst animation
   function handleVote(postId: string, delta: 1 | -1) {
     setVotes((prev) => {
       const current = prev[postId] || 0;
       const next = current === delta ? 0 : delta;
+
+      // Trigger burst animation on upvote
+      if (next === 1) {
+        setBursts((b) => ({ ...b, [postId]: true }));
+        window.setTimeout(() => {
+          setBursts((b) => ({ ...b, [postId]: false }));
+        }, 900);
+      }
+
       return { ...prev, [postId]: next };
     });
   }
@@ -357,12 +598,31 @@ export default function Home() {
 
   return (
     <main className={`orbit ${dark ? "theme-dark" : ""}`}>
-      {/* Top Navigation Bar */}
+      {/* Dynamic 3D Cosmic Aurora Mesh in Background */}
+      <div className="cosmic-mesh">
+        <div className="cosmic-orb cosmic-orb-1" />
+        <div className="cosmic-orb cosmic-orb-2" />
+        <div className="cosmic-orb cosmic-orb-3" />
+      </div>
+
+      {/* Interactive Cursor Spotlight */}
+      <div
+        className="cursor-spotlight"
+        style={{
+          left: `${mousePos.x}px`,
+          top: `${mousePos.y}px`,
+        }}
+      />
+
+      {/* Top Navigation Bar with 3D Glass */}
       <header className="topbar">
         <a className="brand" href="#" onClick={handleReset} aria-label="Orbit Home">
-          <span className="brand-mark">o</span>
+          <div className="brand-mark-wrapper">
+            <div className="brand-mark">o</div>
+            <div className="brand-orbit-ring" />
+          </div>
           <span>orbit</span>
-          <small>BETA</small>
+          <small>3D BETA</small>
         </a>
 
         {/* Global Search Bar */}
@@ -396,7 +656,7 @@ export default function Home() {
             className="theme-btn"
             onClick={() => setDark((prev) => !prev)}
             aria-label="Toggle theme"
-            title={dark ? "Switch to light theme" : "Switch to dark theme"}
+            title={dark ? "Switch to light appearance" : "Switch to cosmic dark"}
           >
             {dark ? "☀" : "☾"}
           </button>
@@ -492,11 +752,12 @@ export default function Home() {
             Explore all communities →
           </button>
 
+          {/* 3D Glass Promo Card */}
           <div className="rail-promo">
             <span className="rail-promo-icon">✦</span>
             <strong>Your corner of the internet.</strong>
             <p>Find your people. Share what matters without the algorithm noise.</p>
-            <button type="button" onClick={() => showToast("Orbit Community Directory is active!")}>
+            <button type="button" onClick={() => showToast("Orbit 3D Directory is active!")}>
               Explore directory ↗
             </button>
           </div>
@@ -510,22 +771,25 @@ export default function Home() {
 
         {/* Center Feed Column */}
         <section className="feed-column">
-          {/* Welcome & Status Header */}
-          <div className="welcome-row">
-            <div>
-              <div className="eyebrow">YOUR COMMUNITY, YOUR WORLD</div>
+          {/* 3D Interactive Hero Card with Canvas */}
+          <div className="hero-3d-card">
+            <OrbitHeroCanvas dark={dark} />
+            <div className="hero-content">
+              <div className="eyebrow">
+                <span>✦</span> YOUR COMMUNITY, YOUR ORBIT
+              </div>
               <h1>
                 Your daily orbit <span>✦</span>
               </h1>
-              <p>Fresh conversations and ideas from the communities you care about.</p>
-            </div>
-            <div className="online-pill">
-              <span className="online-dot" />
-              Community is active
+              <p>Fresh conversations, ideas, and creations from the people you care about.</p>
+              <div className="online-pill">
+                <span className="online-dot" />
+                Community is in orbit
+              </div>
             </div>
           </div>
 
-          {/* Horizontal Community Carousel */}
+          {/* Horizontal 3D Community Carousel */}
           <div className="community-strip" role="region" aria-label="Communities carousel">
             {/* Quick Create Tile */}
             <button
@@ -548,7 +812,7 @@ export default function Home() {
               <span>All</span>
             </button>
 
-            {/* Saved Posts Tile (Especially valuable on Mobile) */}
+            {/* Saved Posts Tile */}
             <button
               type="button"
               className={`community-tile ${community === "saved" ? "selected" : ""}`}
@@ -603,7 +867,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Posts List */}
+          {/* 3D Posts List with Interactive Tilt */}
           <div className="post-list">
             {filteredPosts.map((post) => {
               const comm = initialCommunities.find((x) => x.name === post.community);
@@ -611,112 +875,122 @@ export default function Home() {
               const isSaved = saved.includes(post.id);
               const totalScore = post.votes + voteStatus;
               const isAuthor = post.author === "Anurag K.";
+              const hasBurst = bursts[post.id];
 
               return (
-                <article className="post-card" id={post.id} key={post.id}>
-                  {/* Post Header */}
-                  <div className="post-top">
-                    <i className={`post-icon ${comm?.color || "violet"}`}>
-                      {comm?.icon || "✦"}
-                    </i>
-                    <div className="post-meta">
-                      <button
-                        type="button"
-                        onClick={() => setCommunity(post.community)}
-                      >
-                        c/{post.community}
-                      </button>
-                      <span>
-                        · Posted by {post.author} · {timeAgo(post.createdAt)}
+                <TiltCard key={post.id}>
+                  <article className="post-card" id={post.id}>
+                    {/* Floating burst text when upvoted */}
+                    {hasBurst && (
+                      <span className="vote-burst" style={{ right: "30px", top: "20px" }}>
+                        +1 Karma
                       </span>
-                    </div>
+                    )}
 
-                    <div className="post-top-actions">
-                      {isAuthor && (
+                    {/* Post Header */}
+                    <div className="post-top">
+                      <i className={`post-icon ${comm?.color || "violet"}`}>
+                        {comm?.icon || "✦"}
+                      </i>
+                      <div className="post-meta">
                         <button
                           type="button"
-                          className="post-delete-btn"
-                          title="Delete this post"
-                          onClick={() => handleDeletePost(post.id)}
+                          onClick={() => setCommunity(post.community)}
                         >
-                          ✕
+                          c/{post.community}
                         </button>
-                      )}
+                        <span>
+                          · Posted by {post.author} · {timeAgo(post.createdAt)}
+                        </span>
+                      </div>
+
+                      <div className="post-top-actions">
+                        {isAuthor && (
+                          <button
+                            type="button"
+                            className="post-delete-btn"
+                            title="Delete this post"
+                            onClick={() => handleDeletePost(post.id)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Post Title & Body */}
-                  <h2>{post.title}</h2>
-                  {post.body && <p className="post-body">{post.body}</p>}
+                    {/* Post Title & Body */}
+                    <h2>{post.title}</h2>
+                    {post.body && <p className="post-body">{post.body}</p>}
 
-                  {/* Optional Image */}
-                  {post.image && (
-                    <div className="post-image-wrap">
-                      <img
-                        className="post-image"
-                        src={post.image}
-                        alt={post.title}
-                        loading="lazy"
-                      />
-                    </div>
-                  )}
+                    {/* Optional Image */}
+                    {post.image && (
+                      <div className="post-image-wrap">
+                        <img
+                          className="post-image"
+                          src={post.image}
+                          alt={post.title}
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
 
-                  {/* Post Actions Toolbar */}
-                  <div className="post-actions">
-                    {/* Voting Controls */}
-                    <div className="votes">
+                    {/* Post Actions Toolbar */}
+                    <div className="post-actions">
+                      {/* Voting Controls */}
+                      <div className="votes">
+                        <button
+                          type="button"
+                          className={`vote-btn ${voteStatus === 1 ? "vote-up" : ""}`}
+                          onClick={() => handleVote(post.id, 1)}
+                          aria-label="Upvote"
+                        >
+                          ▲
+                        </button>
+                        <b className="vote-count">{totalScore}</b>
+                        <button
+                          type="button"
+                          className={`vote-btn ${voteStatus === -1 ? "vote-down" : ""}`}
+                          onClick={() => handleVote(post.id, -1)}
+                          aria-label="Downvote"
+                        >
+                          ▼
+                        </button>
+                      </div>
+
+                      {/* Comments Button */}
                       <button
                         type="button"
-                        className={`vote-btn ${voteStatus === 1 ? "vote-up" : ""}`}
-                        onClick={() => handleVote(post.id, 1)}
-                        aria-label="Upvote"
+                        className="action-btn"
+                        onClick={() => setCommentPostId(post.id)}
                       >
-                        ▲
+                        <span>▤</span>
+                        <span className="action-text">
+                          {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+                        </span>
                       </button>
-                      <b className="vote-count">{totalScore}</b>
+
+                      {/* Share Button */}
                       <button
                         type="button"
-                        className={`vote-btn ${voteStatus === -1 ? "vote-down" : ""}`}
-                        onClick={() => handleVote(post.id, -1)}
-                        aria-label="Downvote"
+                        className="action-btn"
+                        onClick={() => handleShare(post.id)}
                       >
-                        ▼
+                        <span>↗</span>
+                        <span className="action-text">Share</span>
+                      </button>
+
+                      {/* Save / Bookmark Button */}
+                      <button
+                        type="button"
+                        className={`action-btn save-btn ${isSaved ? "saved" : ""}`}
+                        onClick={() => toggleSave(post.id)}
+                      >
+                        <span>{isSaved ? "▣" : "▱"}</span>
+                        <span className="action-text">{isSaved ? "Saved" : "Save"}</span>
                       </button>
                     </div>
-
-                    {/* Comments Button */}
-                    <button
-                      type="button"
-                      className="action-btn"
-                      onClick={() => setCommentPostId(post.id)}
-                    >
-                      <span>▤</span>
-                      <span className="action-text">
-                        {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
-                      </span>
-                    </button>
-
-                    {/* Share Button */}
-                    <button
-                      type="button"
-                      className="action-btn"
-                      onClick={() => handleShare(post.id)}
-                    >
-                      <span>↗</span>
-                      <span className="action-text">Share</span>
-                    </button>
-
-                    {/* Save / Bookmark Button */}
-                    <button
-                      type="button"
-                      className={`action-btn save-btn ${isSaved ? "saved" : ""}`}
-                      onClick={() => toggleSave(post.id)}
-                    >
-                      <span>{isSaved ? "▣" : "▱"}</span>
-                      <span className="action-text">{isSaved ? "Saved" : "Save"}</span>
-                    </button>
-                  </div>
-                </article>
+                  </article>
+                </TiltCard>
               );
             })}
 
@@ -748,58 +1022,60 @@ export default function Home() {
 
         {/* Right Sidebar Rail */}
         <aside className="right-rail">
-          {/* User Profile Preview Card */}
-          <section className="panel profile-card">
-            <div className="cover">✦</div>
-            <div className="profile-card-body">
-              <button
-                type="button"
-                className="avatar profile-avatar-badge"
-                onClick={() => setProfileOpen(true)}
-              >
-                AK
-              </button>
-              <h3 className="profile-name">
-                Anurag K. <span>✓</span>
-              </h3>
-              <small className="profile-handle">@anurag · Builder</small>
-              <p className="profile-bio">
-                Curious mind. Building modern applications and learning in public.
-              </p>
+          {/* User Profile Preview Card with 3D Tilt */}
+          <TiltCard maxTilt={5}>
+            <section className="panel profile-card">
+              <div className="cover">✦</div>
+              <div className="profile-card-body">
+                <button
+                  type="button"
+                  className="avatar profile-avatar-badge"
+                  onClick={() => setProfileOpen(true)}
+                >
+                  AK
+                </button>
+                <h3 className="profile-name">
+                  Anurag K. <span>✓</span>
+                </h3>
+                <small className="profile-handle">@anurag · 3D Creator</small>
+                <p className="profile-bio">
+                  Curious mind. Building modern applications, designing 3D interfaces, and learning in public.
+                </p>
 
-              <div className="profile-stats">
-                <div className="profile-stat">
-                  <b>{posts.filter((p) => p.author === "Anurag K.").length}</b>
-                  <small>Posts</small>
+                <div className="profile-stats">
+                  <div className="profile-stat">
+                    <b>{posts.filter((p) => p.author === "Anurag K.").length}</b>
+                    <small>Posts</small>
+                  </div>
+                  <div className="profile-stat">
+                    <b>{joined.length}</b>
+                    <small>Joined</small>
+                  </div>
+                  <div className="profile-stat">
+                    <b>{saved.length}</b>
+                    <small>Saved</small>
+                  </div>
                 </div>
-                <div className="profile-stat">
-                  <b>{joined.length}</b>
-                  <small>Joined</small>
-                </div>
-                <div className="profile-stat">
-                  <b>{saved.length}</b>
-                  <small>Saved</small>
-                </div>
+
+                <button
+                  type="button"
+                  className="profile-view-btn"
+                  onClick={() => setProfileOpen(true)}
+                >
+                  View profile details
+                </button>
               </div>
-
-              <button
-                type="button"
-                className="profile-view-btn"
-                onClick={() => setProfileOpen(true)}
-              >
-                View profile details
-              </button>
-            </div>
-          </section>
+            </section>
+          </TiltCard>
 
           {/* Trending Discussions */}
           <section className="panel side-panel">
             <h3>Trending discussions</h3>
             {[
-              ["01", "Artificial intelligence workflows", "2.4k conversations", "technology"],
-              ["02", "Next.js 16 & React 19 architecture", "1.8k conversations", "technology"],
-              ["03", "Minimalist Design Systems", "956 conversations", "design"],
-              ["04", "Deep space telescope observations", "742 conversations", "science"],
+              ["01", "3D Web Design & Shaders", "2.8k conversations", "design"],
+              ["02", "Next.js 16 Turbopack performance", "1.9k conversations", "technology"],
+              ["03", "Minimalist Glassmorphism Systems", "1.1k conversations", "design"],
+              ["04", "Deep space telescope observations", "850 conversations", "science"],
             ].map(([num, topicName, convCount, targetComm]) => (
               <button
                 type="button"
@@ -846,14 +1122,14 @@ export default function Home() {
           </section>
 
           <div className="right-footer">
-            Built with Next.js & React
+            Built with Next.js & 3D WebGL
             <br />
             Terms · Privacy · Status · Guidelines
           </div>
         </aside>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
+      {/* Mobile Bottom Navigation Bar with 3D Glass */}
       <nav className="mobile-nav" aria-label="Mobile Navigation">
         <button
           type="button"
@@ -904,7 +1180,7 @@ export default function Home() {
         </button>
       </nav>
 
-      {/* Modal: Create Post */}
+      {/* Modal: Create Post (3D Pop-in) */}
       {createOpen && (
         <div
           className="backdrop"
@@ -1010,7 +1286,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal: Comments Drawer */}
+      {/* Modal: Comments Drawer (3D Pop-in) */}
       {activeCommentPost && (
         <div
           className="backdrop"
@@ -1072,7 +1348,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal: User Profile */}
+      {/* Modal: User Profile (3D Pop-in) */}
       {profileOpen && (
         <div
           className="backdrop"
@@ -1100,12 +1376,12 @@ export default function Home() {
               <div className="avatar profile-modal-avatar">AK</div>
               <div className="profile-modal-details">
                 <b>Anurag K.</b>
-                <small>@anurag · Active Member</small>
+                <small>@anurag · 3D Creator</small>
               </div>
             </div>
 
             <p style={{ color: "var(--text-muted)", fontSize: "13px", lineHeight: "1.6" }}>
-              Curious mind. Building modern applications, designing interfaces, and learning in public.
+              Curious mind. Building modern applications, designing 3D interfaces, and learning in public.
             </p>
 
             {/* Theme Toggle option inside Profile Modal */}
@@ -1117,7 +1393,7 @@ export default function Home() {
                 onClick={() => setDark((prev) => !prev)}
                 title="Toggle appearance"
               >
-                {dark ? "☀ Light" : "☾ Dark"}
+                {dark ? "☀ Light" : "☾ Cosmic Dark"}
               </button>
             </div>
 
