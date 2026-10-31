@@ -369,7 +369,10 @@ export default function Home() {
       {/* Sticky Main Top Navigation Bar */}
       <header className="topbar">
         <a className="brand" href="#" onClick={handleReset} aria-label="Orbit Home">
-          <div className="brand-mark">o</div>
+          <div className="brand-mark-wrapper">
+            <div className="brand-mark">o</div>
+            <div className="brand-orbit-ring" />
+          </div>
           <span>orbit</span>
           <small>BETA</small>
         </a>
@@ -526,10 +529,26 @@ export default function Home() {
                 Your daily orbit <span>✦</span>
               </h1>
               <p>Fresh conversations and ideas from the communities you care about.</p>
+              <div className="online-pill">
+                <span className="online-dot" />
+                Community is active
+              </div>
             </div>
-            <div className="online-pill">
-              <span className="online-dot" />
-              Community is active
+
+            {/* 3D Celestial Orbit Portal */}
+            <div className="orbit-3d-portal" aria-hidden="true">
+              <div className="orbit-3d-system">
+                <div className="orbit-3d-core" />
+                <div className="orbit-3d-ring ring-1">
+                  <div className="orbit-3d-planet planet-1" />
+                </div>
+                <div className="orbit-3d-ring ring-2">
+                  <div className="orbit-3d-planet planet-2" />
+                </div>
+                <div className="orbit-3d-ring ring-3">
+                  <div className="orbit-3d-planet planet-3" />
+                </div>
+              </div>
             </div>
           </div>
 
