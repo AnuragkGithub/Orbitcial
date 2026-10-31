@@ -38,30 +38,32 @@ const initialCommunities = [
   { name: "startups", icon: "↗", color: "pink", members: "320k" },
 ];
 
+const SEED_TIME = 1761900000000;
+
 const seedPosts: Post[] = [
   {
     id: "p1",
     community: "technology",
     author: "Mira Chen",
-    createdAt: Date.now() - 720000,
+    createdAt: SEED_TIME - 720000,
     title: "What is one small tool that genuinely improved your daily workflow?",
     body: "Not looking for another list of fifty apps. I mean the one thing you tried that actually stuck. For me, it is a tiny script that cleans up meeting notes before I send them. What is yours?",
     votes: 248,
     comments: [
-      { id: "c1", author: "devon", text: "A text expander. I use it for all the repetitive messages I write.", createdAt: Date.now() - 400000 },
-      { id: "c2", author: "pixelpilot", text: "A keyboard launcher changed how I use my laptop completely.", createdAt: Date.now() - 300000 },
+      { id: "c1", author: "devon", text: "A text expander. I use it for all the repetitive messages I write.", createdAt: SEED_TIME - 400000 },
+      { id: "c2", author: "pixelpilot", text: "A keyboard launcher changed how I use my laptop completely.", createdAt: SEED_TIME - 300000 },
     ],
   },
   {
     id: "p2",
     community: "design",
     author: "Leo Martinez",
-    createdAt: Date.now() - 2280000,
+    createdAt: SEED_TIME - 2280000,
     title: "Good design is often about what you leave out.",
     body: "Spent the morning removing half the UI from a side project. The result feels calmer, clearer, and much closer to what I wanted. More features do not always make a better product.",
     votes: 176,
     comments: [
-      { id: "c3", author: "formandfunction", text: "Editing is a design skill. Great reminder.", createdAt: Date.now() - 1000000 },
+      { id: "c3", author: "formandfunction", text: "Editing is a design skill. Great reminder.", createdAt: SEED_TIME - 1000000 },
     ],
     image: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80",
   },
@@ -69,7 +71,7 @@ const seedPosts: Post[] = [
     id: "p3",
     community: "science",
     author: "Sam Okafor",
-    createdAt: Date.now() - 4500000,
+    createdAt: SEED_TIME - 4500000,
     title: "The night sky is a time machine.",
     body: "Some of the light reaching our eyes tonight began its journey before human civilization existed. Every clear night is a chance to look into the past.",
     votes: 132,
@@ -80,7 +82,7 @@ const seedPosts: Post[] = [
     id: "p4",
     community: "photography",
     author: "Asha Williams",
-    createdAt: Date.now() - 8400000,
+    createdAt: SEED_TIME - 8400000,
     title: "A quiet morning, an empty street, and nowhere to be.",
     body: "Took the long way home and found this little moment. Sometimes the best camera setting is simply slowing down.",
     votes: 98,
@@ -91,7 +93,7 @@ const seedPosts: Post[] = [
     id: "p5",
     community: "technology",
     author: "Noah Patel",
-    createdAt: Date.now() - 13200000,
+    createdAt: SEED_TIME - 13200000,
     title: "Learning in public: week four of building my first full-stack app",
     body: "This week I finally understood why database relationships matter. Make the data model clear before building five screens on top of it. What helped concepts click for you?",
     votes: 84,
@@ -363,7 +365,7 @@ export default function Home() {
   }
 
   return (
-    <main className={`orbit ${dark ? "theme-dark" : ""}`}>
+    <main className={`orbit ${dark ? "theme-dark" : ""}`} suppressHydrationWarning>
       {/* Sticky Main Top Navigation Bar */}
       <header className="topbar">
         <a className="brand" href="#" onClick={handleReset} aria-label="Orbit Home">
@@ -647,8 +649,8 @@ export default function Home() {
                       >
                         c/{post.community}
                       </button>
-                      <span>
-                        · Posted by {post.author} · {timeAgo(post.createdAt)}
+                      <span suppressHydrationWarning>
+                        · Posted by {post.author} · {mounted ? timeAgo(post.createdAt) : "recently"}
                       </span>
                     </div>
 
@@ -1065,7 +1067,9 @@ export default function Home() {
                     <div className="comment-content">
                       <div className="comment-author-row">
                         <b className="comment-author">{c.author}</b>
-                        <small className="comment-time">{timeAgo(c.createdAt)}</small>
+                        <small className="comment-time" suppressHydrationWarning>
+                          {mounted ? timeAgo(c.createdAt) : "recently"}
+                        </small>
                       </div>
                       <p className="comment-text">{c.text}</p>
                     </div>
