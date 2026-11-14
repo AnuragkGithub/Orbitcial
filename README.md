@@ -3,13 +3,14 @@
 An original Reddit-inspired community social app built with Next.js App Router, React, TypeScript, and CSS.
 
 ## Included
-- Responsive desktop, tablet, and mobile layouts
+- Responsive desktop, tablet, and mobile layouts with an animated 3D orbital hero
 - Search posts, filter communities and saved posts
-- For you / Latest / Top sorting
-- Create posts, upvote/downvote, comments
-- Save posts, share links, join communities
-- Profile preview and light/dark themes
-- Local browser persistence with localStorage
+- For you (joined communities) / Latest / Top sorting
+- Create posts, upvote/downvote, comment, save, and share
+- Join or leave communities from the profile panel
+- Profile preview, light/dark themes, and reduced-motion support
+- Image uploads are resized in the browser before local persistence
+- Local browser persistence with validated data and visible storage errors
 - No API keys or extra UI libraries required
 
 ## Run on macOS
@@ -32,7 +33,7 @@ npm start
 ```
 
 ## Important scope
-This is a complete runnable **local MVP/frontend prototype**, not a production multi-user network. Posts, votes, comments, saved items, joined communities and theme settings persist in this browser using localStorage. Different devices/users do not share data. Real accounts, shared database, uploads, messaging, moderation and production security require a backend such as Supabase or a custom API. Never expose service-role secrets in browser code.
+This is a complete runnable **local MVP/frontend prototype**, not a production multi-user network. Posts, votes, comments, saved items, joined communities and theme settings persist in this browser using localStorage. Different devices/users do not share data. Production accounts, shared database-backed uploads, messaging, moderation and security require a backend such as Supabase or a custom API. Never expose service-role secrets in browser code.
 
 The design is an original Orbit interface inspired by community-platform conventions; it does not use another platform's branding or proprietary assets.
 

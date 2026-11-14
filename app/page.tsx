@@ -38,7 +38,7 @@ const initialCommunities = [
   { name: "startups", icon: "↗", color: "pink", members: "320k" },
 ];
 
-const SEED_TIME = 1761900000000;
+const SEED_TIME = Date.now();
 
 const seedPosts: Post[] = [
   {
@@ -101,7 +101,46 @@ const seedPosts: Post[] = [
   },
 ];
 
+const seedPostsById = new Map(seedPosts.map((post) => [post.id, post]));
 const STORAGE_KEY = "orbit-social-v1";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isComment(value: unknown): value is Comment {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.author === "string" &&
+    typeof value.text === "string" &&
+    typeof value.createdAt === "number"
+  );
+}
+
+function isPost(value: unknown): value is Post {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.community === "string" &&
+    typeof value.author === "string" &&
+    typeof value.createdAt === "number" &&
+    typeof value.title === "string" &&
+    typeof value.body === "string" &&
+    typeof value.votes === "number" &&
+    Array.isArray(value.comments) &&
+    value.comments.every(isComment) &&
+    (value.image === undefined || typeof value.image === "string")
+  );
+}
+
+function currentTimestamp(): number {
+  return Date.now();
+}
+
+function createId(prefix: string): string {
+  return `${prefix}${currentTimestamp()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function timeAgo(timestamp: number): string {
   const minutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60000));
@@ -149,27 +188,75 @@ export default function Home() {
   const [commentDraft, setCommentDraft] = useState("");
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const communityStripRef = useRef<HTMLDivElement>(null);
+  const noticeTimeoutRef = useRef<number | null>(null);
 
-  // Load from localStorage on mount
+  // Hydrating browser persistence is an intentional client-only state update.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const data = JSON.parse(raw);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (Array.isArray(data.posts) && data.posts.length > 0) setPosts(data.posts);
-        if (data.votes) setVotes(data.votes);
-        if (Array.isArray(data.saved)) setSaved(data.saved);
-        if (Array.isArray(data.joined)) setJoined(data.joined);
+        const data: unknown = JSON.parse(raw);
+        if (!isRecord(data)) throw new Error("Saved Orbit data has an invalid format.");
+
+        if (Array.isArray(data.posts)) {
+          const validPosts = data.posts.filter(isPost);
+          if (validPosts.length !== data.posts.length) {
+            console.error("Some saved Orbit posts were invalid and were skipped.");
+          }
+          const refreshedPosts = validPosts.map((post) => {
+            const seed = seedPostsById.get(post.id);
+            if (!seed || post.title !== seed.title || post.author !== seed.author) {
+              return post;
+            }
+            return {
+              ...post,
+              createdAt: seed.createdAt,
+              comments: post.comments.map((comment) => {
+                const seedComment = seed.comments.find(
+                  (item) =>
+                    item.id === comment.id &&
+                    item.author === comment.author &&
+                    item.text === comment.text
+                );
+                return seedComment
+                  ? { ...comment, createdAt: seedComment.createdAt }
+                  : comment;
+              }),
+            };
+          });
+          if (refreshedPosts.length > 0) setPosts(refreshedPosts);
+        }
+        if (isRecord(data.votes)) {
+          const validVotes: Record<string, number> = {};
+          for (const [id, value] of Object.entries(data.votes)) {
+            if (value === -1 || value === 0 || value === 1) validVotes[id] = value;
+          }
+          setVotes(validVotes);
+        }
+        if (Array.isArray(data.saved)) {
+          setSaved(data.saved.filter((id): id is string => typeof id === "string"));
+        }
+        if (Array.isArray(data.joined)) {
+          const knownCommunities = new Set(initialCommunities.map((item) => item.name));
+          setJoined(
+            data.joined.filter(
+              (name): name is string =>
+                typeof name === "string" && knownCommunities.has(name)
+            )
+          );
+        }
         if (typeof data.dark === "boolean") setDark(data.dark);
       }
-    } catch {
-      // Ignore local storage parse errors
+    } catch (error) {
+      console.error("Unable to load saved Orbit data.", error);
+      setNotice("Saved data could not be loaded. A fresh feed is ready.");
     }
     setMounted(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Save to localStorage
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -177,10 +264,33 @@ export default function Home() {
         STORAGE_KEY,
         JSON.stringify({ posts, votes, saved, joined, dark })
       );
-    } catch {
-      // Storage quota or error handling
+    } catch (error) {
+      console.error("Unable to save Orbit data in this browser.", error);
+      // Persistence failures need immediate user feedback from this synchronization effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotice("Orbit could not save changes. Browser storage may be full.");
     }
   }, [posts, votes, saved, joined, dark, mounted]);
+
+  const modalOpen = createOpen || commentPostId !== null || profileOpen;
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [modalOpen]);
+
+  useEffect(
+    () => () => {
+      if (noticeTimeoutRef.current !== null) {
+        window.clearTimeout(noticeTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   // Keyboard shortcut listener (Cmd+K / Ctrl+K and Escape)
   useEffect(() => {
@@ -202,12 +312,19 @@ export default function Home() {
   // Toast notification
   function showToast(msg: string) {
     setNotice(msg);
-    window.setTimeout(() => setNotice(""), 2800);
+    if (noticeTimeoutRef.current !== null) {
+      window.clearTimeout(noticeTimeoutRef.current);
+    }
+    noticeTimeoutRef.current = window.setTimeout(() => setNotice(""), 3200);
   }
 
   // Filter & sort feed
   const filteredPosts = useMemo(() => {
     let list = [...posts];
+
+    if (community === "all" && sort === "For you") {
+      list = list.filter((post) => joined.includes(post.community));
+    }
 
     // Community filter
     if (community === "saved") {
@@ -240,7 +357,7 @@ export default function Home() {
     }
 
     return list;
-  }, [posts, community, saved, search, sort, votes]);
+  }, [posts, community, joined, saved, search, sort, votes]);
 
   // Current post selected for comments
   const activeCommentPost = posts.find((p) => p.id === commentPostId) || null;
@@ -268,26 +385,60 @@ export default function Home() {
   function handleDeletePost(postId: string) {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
     setSaved((prev) => prev.filter((id) => id !== postId));
+    setVotes((prev) => {
+      const next = { ...prev };
+      delete next[postId];
+      return next;
+    });
     showToast("Post deleted.");
   }
 
-  // Image file upload
-  function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.currentTarget.value = "";
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
       showToast("Image size must be under 5MB.");
       return;
     }
+    if (!file.type.startsWith("image/")) {
+      showToast("Choose a valid image file.");
+      return;
+    }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setImagePreview(result);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1440 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas is unavailable.");
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+
+      const compressed = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", 0.8)
+      );
+      if (!compressed) throw new Error("Image compression failed.");
+
+      const preview = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("Image preview could not be read."));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("Image read failed."));
+        reader.readAsDataURL(compressed);
+      });
+
+      setImagePreview(preview);
       setImageUrlInput("");
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Unable to prepare the selected image.", error);
+      showToast("This image could not be prepared. Try another image.");
+    }
   }
 
   // Create post
@@ -297,11 +448,12 @@ export default function Home() {
 
     const finalImage = imagePreview.trim() || imageUrlInput.trim() || undefined;
 
+    const createdAt = currentTimestamp();
     const newPost: Post = {
-      id: `p${Date.now()}`,
+      id: createId("p"),
       community: postCommunity,
       author: "Anurag K.",
-      createdAt: Date.now(),
+      createdAt,
       title: title.trim(),
       body: body.trim(),
       votes: 1,
@@ -326,10 +478,10 @@ export default function Home() {
     if (!activeCommentPost || !commentDraft.trim()) return;
 
     const newComment: Comment = {
-      id: `c${Date.now()}`,
+      id: createId("c"),
       author: "Anurag K.",
       text: commentDraft.trim(),
-      createdAt: Date.now(),
+      createdAt: currentTimestamp(),
     };
 
     setPosts((prev) =>
@@ -351,17 +503,46 @@ export default function Home() {
     setSort("For you");
   }
 
+  function handleExploreCommunities() {
+    setCommunity("all");
+    setSearch("");
+    communityStripRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+  }
+
   // Share post link
-  function handleShare(postId: string) {
-    const url = typeof window !== "undefined" ? `${window.location.origin}/#${postId}` : "";
-    if (navigator.clipboard) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => showToast("Post link copied to clipboard!"))
-        .catch(() => showToast(url));
-    } else {
-      showToast(url);
+  async function handleShare(postId: string) {
+    const url = new URL(window.location.href);
+    url.hash = postId;
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      showToast("Post link copied to clipboard.");
+    } catch (error) {
+      console.error("Clipboard access failed while sharing a post.", error);
+      const field = document.createElement("textarea");
+      field.value = url.toString();
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      showToast(copied ? "Post link copied to clipboard." : `Copy this link: ${url.toString()}`);
     }
+  }
+
+  function toggleCommunity(name: string) {
+    const isJoined = joined.includes(name);
+    setJoined((previous) =>
+      isJoined ? previous.filter((item) => item !== name) : [...previous, name]
+    );
+    if (isJoined && community === name) setCommunity("all");
+    showToast(isJoined ? `Left c/${name}.` : `Joined c/${name}.`);
   }
 
   return (
@@ -465,7 +646,9 @@ export default function Home() {
           <button
             type="button"
             className="rail-link"
-            onClick={() => showToast("You are all caught up on alerts.")}
+            onClick={() =>
+              showToast("Notifications will be available when Orbit has an account backend.")
+            }
           >
             <span>♧</span> Notifications
           </button>
@@ -499,7 +682,7 @@ export default function Home() {
           <button
             type="button"
             className="see-all"
-            onClick={() => setCommunity("all")}
+            onClick={handleExploreCommunities}
           >
             Explore all communities →
           </button>
@@ -507,7 +690,7 @@ export default function Home() {
           <div className="rail-promo">
             <strong>Your corner of the internet.</strong>
             <p>Find your people. Share what matters without the algorithm noise.</p>
-            <button type="button" onClick={() => showToast("Orbit Directory is active!")}>
+            <button type="button" onClick={handleExploreCommunities}>
               Explore directory ↗
             </button>
           </div>
@@ -553,7 +736,12 @@ export default function Home() {
           </div>
 
           {/* Horizontal Community Carousel */}
-          <div className="community-strip" role="region" aria-label="Communities carousel">
+          <div
+            ref={communityStripRef}
+            className="community-strip"
+            role="region"
+            aria-label="Communities carousel"
+          >
             {/* Quick Create Tile */}
             <button
               type="button"
@@ -646,7 +834,7 @@ export default function Home() {
           </div>
 
           {/* Fast, Crisp, Butter-Smooth Posts List */}
-          <div className="post-list">
+          <div className="post-list" aria-live="polite" aria-busy={!mounted}>
             {filteredPosts.map((post) => {
               const comm = initialCommunities.find((x) => x.name === post.community);
               const voteStatus = votes[post.id] || 0;
@@ -712,6 +900,7 @@ export default function Home() {
                         className={`vote-btn ${voteStatus === 1 ? "vote-up" : ""}`}
                         onClick={() => handleVote(post.id, 1)}
                         aria-label="Upvote"
+                        aria-pressed={voteStatus === 1}
                       >
                         ▲
                       </button>
@@ -721,6 +910,7 @@ export default function Home() {
                         className={`vote-btn ${voteStatus === -1 ? "vote-down" : ""}`}
                         onClick={() => handleVote(post.id, -1)}
                         aria-label="Downvote"
+                        aria-pressed={voteStatus === -1}
                       >
                         ▼
                       </button>
@@ -753,6 +943,7 @@ export default function Home() {
                       type="button"
                       className={`action-btn save-btn ${isSaved ? "saved" : ""}`}
                       onClick={() => toggleSave(post.id)}
+                      aria-pressed={isSaved}
                     >
                       <span>{isSaved ? "▣" : "▱"}</span>
                       <span className="action-text">{isSaved ? "Saved" : "Save"}</span>
@@ -871,10 +1062,7 @@ export default function Home() {
                   <button
                     type="button"
                     className="suggest-join-btn"
-                    onClick={() => {
-                      setJoined((prev) => [...prev, c.name]);
-                      showToast(`Joined c/${c.name}!`);
-                    }}
+                    onClick={() => toggleCommunity(c.name)}
                   >
                     ＋ Join
                   </button>
@@ -954,11 +1142,17 @@ export default function Home() {
             if (e.target === e.currentTarget) setCreateOpen(false);
           }}
         >
-          <form className="modal" onSubmit={handleCreatePost}>
+          <form
+            className="modal"
+            onSubmit={handleCreatePost}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-post-heading"
+          >
             <div className="modal-head">
               <div>
                 <small>SHARE WITH YOUR ORBIT</small>
-                <h2>Create a post</h2>
+                <h2 id="create-post-heading">Create a post</h2>
               </div>
               <button
                 type="button"
@@ -994,6 +1188,7 @@ export default function Home() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Give your post an interesting, concise title"
+                autoFocus
               />
             </div>
 
@@ -1060,11 +1255,17 @@ export default function Home() {
             if (e.target === e.currentTarget) setCommentPostId(null);
           }}
         >
-          <section className="modal" aria-label="Post comments">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="comments-heading"
+            tabIndex={-1}
+          >
             <div className="modal-head">
               <div>
                 <small>COMMUNITY CONVERSATION</small>
-                <h2>Comments ({activeCommentPost.comments.length})</h2>
+                <h2 id="comments-heading">Comments ({activeCommentPost.comments.length})</h2>
               </div>
               <button
                 type="button"
@@ -1124,11 +1325,17 @@ export default function Home() {
             if (e.target === e.currentTarget) setProfileOpen(false);
           }}
         >
-          <section className="modal" aria-label="Your Profile">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-heading"
+            tabIndex={-1}
+          >
             <div className="modal-head">
               <div>
                 <small>YOUR ORBIT PROFILE</small>
-                <h2>Profile Details</h2>
+                <h2 id="profile-heading">Profile Details</h2>
               </div>
               <button
                 type="button"
@@ -1181,6 +1388,27 @@ export default function Home() {
               </div>
             </div>
 
+            <section className="profile-community-manager" aria-label="Manage communities">
+              <h3>Your communities</h3>
+              {initialCommunities.map((item) => {
+                const isJoined = joined.includes(item.name);
+                return (
+                  <div className="profile-community-row" key={item.name}>
+                    <i className={`community-symbol ${item.color}`}>{item.icon}</i>
+                    <span>c/{item.name}</span>
+                    <button
+                      type="button"
+                      className={isJoined ? "community-leave-btn" : "community-join-btn"}
+                      aria-pressed={isJoined}
+                      onClick={() => toggleCommunity(item.name)}
+                    >
+                      {isJoined ? "Leave" : "Join"}
+                    </button>
+                  </div>
+                );
+              })}
+            </section>
+
             <p className="local-note">
               This demo profile is active on this device. Connect a database (e.g. Supabase) to enable accounts across devices and shared communities.
             </p>
@@ -1189,7 +1417,11 @@ export default function Home() {
       )}
 
       {/* Toast Alert */}
-      {notice && <div className="toast">{notice}</div>}
+      {notice && (
+        <div className="toast" role="status" aria-live="polite">
+          {notice}
+        </div>
+      )}
     </main>
   );
 }
